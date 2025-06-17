@@ -1,0 +1,71 @@
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from api.endpoints import router  # Tus endpoints dinámicos
+from logger.logging_config import logger  # ✅ Logger personalizado
+
+app = FastAPI(
+    title="SktCod-API",
+    description="API-VDial-Custom",
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url="/openapi.json"
+)
+
+# ✅ Middleware para registrar logs de cada petición
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"📥 {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"📤 {response.status_code} {request.url}")
+    return response
+
+# ✅ Middleware para limpiar y reforzar headers HTTP
+@app.middleware("http")
+async def clean_response_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+
+    # Reemplazar el encabezado `Server`
+    response.headers["server"] = "SktCod-API"
+
+    # Eliminar headers innecesarios o sensibles
+    for header in ["x-powered-by", "date"]:
+        if header in response.headers:
+            del response.headers[header]
+
+    return response
+
+# ✅ Incluir router dinámico
+app.include_router(router)
+
+# ✅ Servir archivos estáticos del Swagger personalizado
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ✅ Ruta personalizada para Swagger UI
+@app.get("/sktcod.custom.api", include_in_schema=False)
+async def custom_swagger_ui():
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>SktCod-API</title>
+        <link rel="stylesheet" type="text/css" href="/static/swagger/swagger-ui.css" />
+        <link rel="icon" type="image/png" href="/static/swagger/favicon-32x32.png" />
+    </head>
+    <body>
+        <div id="swagger-ui"></div>
+        <script src="/static/swagger/swagger-ui-bundle.js"></script>
+        <script>
+        const ui = SwaggerUIBundle({
+            url: '/openapi.json',
+            dom_id: '#swagger-ui',
+            presets: [SwaggerUIBundle.presets.apis],
+            layout: "BaseLayout"
+        });
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
